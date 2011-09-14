@@ -8,25 +8,38 @@ use HTML::StickyQuery::DoCoMoGUID;
 sub call {
     my ($self, $env) = @_;
     my $res = $self->app->($env);
-    if ( $res->[0] == 200 ) {
-        my $headers = $res->[1];
-        my $body = $res->[2];
-        my $content_type = Plack::Util::header_get($res->[1], 'content-type');
-        if ( $content_type && $content_type =~ m{html} ) {
-            my $sticky = HTML::StickyQuery::DoCoMoGUID->new;
-            $sticky->{sticky}->utf8_mode(1);
-            $body = $sticky->sticky(
-                arrayref => $body,
-                ( $self->{params} ? ( param => $self->{params} ) : () ),
-            );
-            if ( Plack::Util::header_exists($res->[1], 'Content-Length') ) {
-                Plack::Util::header_set($res->[1], 'Content-Length', length($body));
-            }
-            $res->[2] = [ $body ];
-        }
-    }
 
-    return $res;
+    $self->response_cb($res, sub {
+        my $res = shift;
+
+        my @chunk;
+        sub {
+            my $chunk = shift;
+
+            if ( $res->[0] == 200 ) {
+                my $headers = $res->[1];
+                my $content_type = Plack::Util::header_get($res->[1], 'content-type');
+                if ( $content_type && $content_type =~ m{html} ) {
+                    if ( defined $chunk ) {
+                        push @chunk, $chunk;
+                        return "";
+                    }
+                    elsif (@chunk) {
+                        my $sticky = HTML::StickyQuery::DoCoMoGUID->new;
+                        $sticky->{sticky}->utf8_mode(1);
+                        my $body = join("", @chunk);
+                        $body = $sticky->sticky(
+                            scalarref => \$body,
+                            ( $self->{params} ? ( param => $self->{params} ) : () ),
+                        );
+                        return $body;
+                    }
+                }
+            }
+
+            return $chunk;
+        };
+    });
 }
 
 1;

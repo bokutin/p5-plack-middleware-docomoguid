@@ -8,32 +8,35 @@ use URI;
 sub call {
     my ($self, $env) = @_;
     my $res = $self->app->($env);
-    if ( $res->[0] == 301 || $res->[0] == 302 ) {
-        my $location = Plack::Util::header_get($res->[1], 'location');
-        my $uri = URI->new($location);
 
-        # Is there any case to using not match host?
-        if ( $uri->host eq ( $env->{HTTP_HOST} || $env->{SERVER_NAME} ) ) {
-            my $params = $self->{params} || +{};
-            $params->{guid} ||= 'ON';
+    $self->response_cb($res, sub {
+        my $res = shift;
 
-            my %query_form = $uri->query_form;
-            my %fill_param_of;
-            for my $key ( keys %{ $params } ) {
-                if ( ! defined $query_form{$key} ) {
-                    $fill_param_of{$key} = 1;
+        if ( $res->[0] == 301 || $res->[0] == 302 ) {
+            my $location = Plack::Util::header_get($res->[1], 'location');
+            my $uri = URI->new($location);
+
+            # Is there any case to using not match host?
+            if ( $uri->host eq ( $env->{HTTP_HOST} || $env->{SERVER_NAME} ) ) {
+                my $params = $self->{params} || +{};
+                $params->{guid} ||= 'ON';
+
+                my %query_form = $uri->query_form;
+                my %fill_param_of;
+                for my $key ( keys %{ $params } ) {
+                    if ( ! defined $query_form{$key} ) {
+                        $fill_param_of{$key} = 1;
+                    }
+                }
+                if ( keys %fill_param_of ) {
+                    my @args = map { ( $_ => $params->{$_} ) } keys %fill_param_of;
+                    push @args, $uri->query_form;
+                    $uri->query_form(@args);
+                    Plack::Util::header_set($res->[1], 'location', $uri->as_string);
                 }
             }
-            if ( keys %fill_param_of ) {
-                my @args = map { ( $_ => $params->{$_} ) } keys %fill_param_of;
-                push @args, $uri->query_form;
-                $uri->query_form(@args);
-                Plack::Util::header_set($res->[1], 'location', $uri->as_string);
-            }
         }
-    }
-
-    return $res;
+    });
 }
 
 1;
